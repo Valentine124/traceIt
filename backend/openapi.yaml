@@ -1,0 +1,205 @@
+openapi: 3.0.3
+info:
+  title: TraceIt API
+  version: 0.1.0
+  description: >
+    AI-powered civic transparency and accountability platform.
+    This spec currently documents the modules implemented so far
+    (auth, projects, reports, USSD, SMS). More endpoints will be added
+    as remaining modules (evidence, verification, civic-reality-check,
+    AI, notifications, localization) are built out.
+servers:
+  - url: /api/v1
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            code: { type: string }
+            message: { type: string }
+        requestId: { type: string }
+paths:
+  /auth/otp/request:
+    post:
+      summary: Request a phone OTP
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [phone]
+              properties:
+                phone: { type: string, example: "+2348012345678" }
+      responses:
+        '200': { description: OTP sent }
+        '429': { description: Rate limited, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /auth/otp/verify:
+    post:
+      summary: Verify OTP and receive tokens
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [phone, otp]
+              properties:
+                phone: { type: string }
+                otp: { type: string, minLength: 6, maxLength: 6 }
+      responses:
+        '200': { description: Authenticated }
+        '401': { description: Invalid or expired code }
+
+  /auth/register:
+    post:
+      summary: Register with email/password
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string, minLength: 10 }
+                displayName: { type: string }
+      responses:
+        '201': { description: Created }
+        '409': { description: Email already registered }
+
+  /auth/login:
+    post:
+      summary: Login with email/password
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string }
+                password: { type: string }
+      responses:
+        '200': { description: Authenticated }
+        '401': { description: Invalid credentials }
+
+  /auth/refresh:
+    post:
+      summary: Exchange a refresh token for new tokens
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refreshToken]
+              properties:
+                refreshToken: { type: string }
+      responses:
+        '200': { description: New tokens issued }
+        '401': { description: Invalid or revoked refresh token }
+
+  /auth/logout-all:
+    post:
+      summary: Revoke all active sessions for the current user
+      security: [{ bearerAuth: [] }]
+      responses:
+        '204': { description: Logged out everywhere }
+        '401': { description: Unauthorized }
+
+  /projects:
+    get:
+      summary: Discover public projects
+      parameters:
+        - in: query
+          name: page
+          schema: { type: integer, default: 1 }
+        - in: query
+          name: pageSize
+          schema: { type: integer, default: 20 }
+        - in: query
+          name: category
+          schema: { type: string, enum: [HEALTHCARE, EDUCATION, ROADS, WATER, ELECTRICITY, OTHER] }
+        - in: query
+          name: search
+          schema: { type: string }
+      responses:
+        '200': { description: Paginated project list }
+    post:
+      summary: Create a project (ORGANIZATION_ADMIN or SYSTEM_ADMIN only)
+      security: [{ bearerAuth: [] }]
+      responses:
+        '201': { description: Created }
+        '403': { description: Forbidden }
+
+  /projects/{id}:
+    get:
+      summary: Get a single project
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200': { description: Project detail }
+        '404': { description: Not found }
+
+  /reports:
+    post:
+      summary: Submit a report (anonymous or authenticated)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [title, description]
+              properties:
+                projectId: { type: string, format: uuid }
+                title: { type: string }
+                description: { type: string }
+                visibility: { type: string, enum: [ANONYMOUS, PROTECTED, PUBLIC] }
+      responses:
+        '201': { description: Report created — returns a public trackingId }
+    get:
+      summary: List reports (verifiers/admins only)
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Paginated report list }
+        '401': { description: Unauthorized }
+
+  /reports/track/{trackingId}:
+    get:
+      summary: Public status lookup by tracking ID — no identity ever returned
+      parameters:
+        - in: path
+          name: trackingId
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200': { description: Report status }
+        '404': { description: Not found }
+
+  /ussd:
+    post:
+      summary: Africa's Talking USSD webhook
+      responses:
+        '200': { description: USSD menu text (CON/END prefixed) }
+
+  /sms/inbound:
+    post:
+      summary: Inbound SMS webhook (idempotent by provider message id)
+      responses:
+        '200': { description: Acknowledged }

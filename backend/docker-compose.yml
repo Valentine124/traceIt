@@ -1,0 +1,50 @@
+version: '3.9'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: traceit
+      POSTGRES_PASSWORD: traceit_dev_password
+      POSTGRES_DB: traceit
+    ports:
+      - '5432:5432'
+    volumes:
+      - traceit_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U traceit']
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - '6379:6379'
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: .
+      target: builder
+    command: sh -c "npx prisma migrate deploy && node -r tsx/cjs src/server.ts"
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://traceit:traceit_dev_password@postgres:5432/traceit
+      REDIS_URL: redis://redis:6379
+    ports:
+      - '4000:4000'
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./src:/app/src
+
+volumes:
+  traceit_postgres_data:
